@@ -5,8 +5,8 @@ import time
 import os
 
 # --- 設定 ---
-# LINE送信機能は、サーバーが「Live」になった後に改めて追加します
-# 今は確実に起動させることを優先します
+# 確実に起動(Live)させるため、LINE機能は一旦外しています。
+# ステータスが緑の Live になった後、改めて LINE を繋ぎ込みます。
 
 # 全国24会場のJCDコードリスト
 JCD_LIST = [str(i).zfill(2) for i in range(1, 25)]
@@ -44,7 +44,7 @@ if __name__ == "__main__":
     while True:
         current_hour = time.localtime().tm_hour
         
-        # 深夜（21時〜翌8時）は1時間おきにチェック
+        # 深夜（21時〜翌8時）は1時間おきにチェック（節約モード）
         if current_hour >= 21 or current_hour < 8:
             print("🌙 夜間モード：1時間待機します...")
             time.sleep(3600)
@@ -56,7 +56,7 @@ if __name__ == "__main__":
             for rno in range(1, 13):
                 data = get_boat_data(jcd, str(rno))
                 if data:
-                    # 今はログに出力するだけ（LINE送信はLive後に復活させます）
+                    # 今はログに出力するだけ
                     print(f"✅ データ確認: 会場{jcd} {rno}R {data['ex_times']}")
                 
                 time.sleep(0.1) 
