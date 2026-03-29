@@ -1,10 +1,19 @@
 import os
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import threading
 import requests
+import re
+from bs4 import BeautifulSoup
 import time
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from linebot import LineBotApi
+from linebot.models import TextSendMessage
 
-# --- Renderのタイムアウトを回避するための「偽の窓口」 ---
+# --- 設定 ---
+CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
+line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
+USER_ID = os.environ.get('LINE_USER_ID') # 自分のLINEユーザーID
+
+# Renderのタイムアウト回避用
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -14,22 +23,40 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 def run_health_check_server():
     port = int(os.environ.get("PORT", 8080))
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
-    print(f"📡 偽の窓口をポート {port} で開放しました")
     server.serve_forever()
 
-# --- メインの監視プログラム ---
+def get_boat_data(jcd, rno):
+    """指定した会場・レースの展示タイムを取得"""
+    url = f"https://www.boatrace.jp/owpc/pc/race/beforeinfo?rno={rno}&jcd={jcd}"
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
+        res.encoding = 'utf-8'
+        soup = BeautifulSoup(res.text, 'html.parser')
+        ex_times = re.findall(r'6\.\d{2}|7\.\d{2}', res.text)[:6]
+        return ex_times if len(ex_times) == 6 else None
+    except:
+        return None
+
 if __name__ == "__main__":
-    # 偽の窓口を別スレッドで開始
+    # 窓口開放
     threading.Thread(target=run_health_check_server, daemon=True).start()
     
-    print("🚀 ボートレース監視システム、起動しました")
+    print("🚀 ボートレース監視システム、フル稼働開始！")
     
     while True:
-        try:
-            res = requests.get("https://www.boatrace.jp/", timeout=10)
-            print(f"✅ 接続チェックOK: {res.status_code}")
-        except Exception as e:
-            print(f"❌ 接続エラー: {e}")
-            
-        print("🌙 待機中（10分おきにチェック）...")
-        time.sleep(600)
+        current_hour = time.localtime().tm_hour
+        # 8時〜21時の間だけ稼働
+        if 8 <= current_hour <= 21:
+            for jcd in [str(i).zfill(2) for i in range(1, 25)]:
+                # 各会場の1R〜12Rをチェック（簡易版として直近レースを想定）
+                # ※本来は締切時刻を見て制御しますが、まずはデータを取ることを優先
+                data = get_boat_data(jcd, "01") 
+                if data:
+                    msg = f"【データ取得】会場:{jcd} 1R\n展示タイム: {', '.join(data)}"
+                    line_bot_api.push_message(USER_ID, TextSendMessage(text=msg))
+                    print(f"📩 LINE送信済: {jcd}")
+                time.sleep(1) # サーバー負荷軽減
+        
+        print("💤 15分待機します...")
+        time.sleep(900)
