@@ -3,18 +3,16 @@ import re
 from bs4 import BeautifulSoup
 import time
 import os
-from linebot import LineBotApi
-from linebot.models import TextSendMessage
 
-# --- 設定（Renderの環境変数から読み込み） ---
-CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
-line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
+# --- 設定 ---
+# LINE送信機能は、サーバーが「Live」になった後に改めて追加します
+# 今は確実に起動させることを優先します
 
 # 全国24会場のJCDコードリスト
 JCD_LIST = [str(i).zfill(2) for i in range(1, 25)]
 
 def get_boat_data(jcd, rno):
-    """ボートレース公式サイトから展示タイムと気象データを取得"""
+    """展示タイムと気象データを取得"""
     url = f"https://www.boatrace.jp/owpc/pc/race/beforeinfo?rno={rno}&jcd={jcd}"
     headers = {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)'}
     try:
@@ -40,47 +38,28 @@ def get_boat_data(jcd, rno):
     except:
         return None
 
-def send_line_message(data):
-    """LINEに予想（テスト版）を送信"""
-    # ここに藤井さんの予想ロジックを入れる予定。今はデータ通知のみ。
-    msg = f"【ボートレース予想】\n会場コード:{data['jcd']}\nレース:{data['rno']}R\n展示タイム:{data['ex_times']}\n気象:{data['weather']}"
-    try:
-        # ブロードキャスト送信（友だち登録者全員に届きます）
-        line_bot_api.broadcast(TextSendMessage(text=msg))
-        print(f"📢 LINE送信完了: {data['jcd']} {data['rno']}R")
-    except Exception as e:
-        print(f"❌ LINE送信失敗: {e}")
-
 if __name__ == "__main__":
-    print("🚀 ボートレースAIボット、24会場監視モードで起動しました")
+    print("🚀 ボートレース監視システム、起動しました")
     
-    # 送信済みレースを記録するリスト（同じレースを何度も送らないため）
-    sent_list = []
-
     while True:
         current_hour = time.localtime().tm_hour
         
-        # 深夜（21時〜翌8時）は1時間おきにチェック（節約モード）
+        # 深夜（21時〜翌8時）は1時間おきにチェック
         if current_hour >= 21 or current_hour < 8:
             print("🌙 夜間モード：1時間待機します...")
             time.sleep(3600)
-            sent_list = [] # 日付が変わるタイミングでリストをリセット
             continue
 
         print(f"⏰ {current_hour}時台のスキャンを開始します...")
         
         for jcd in JCD_LIST:
             for rno in range(1, 13):
-                race_id = f"{jcd}-{rno}"
-                if race_id in sent_list:
-                    continue
-                
                 data = get_boat_data(jcd, str(rno))
                 if data:
-                    send_line_message(data)
-                    sent_list.append(race_id) # 送信済みに追加
+                    # 今はログに出力するだけ（LINE送信はLive後に復活させます）
+                    print(f"✅ データ確認: 会場{jcd} {rno}R {data['ex_times']}")
                 
-                time.sleep(0.2) # サイトへの負荷軽減
+                time.sleep(0.1) 
         
-        print("🏁 全会場チェック完了。5分後に再試行します。")
-        time.sleep(300) # 5分待機
+        print("🏁 全会場チェック完了。10分後に再試行します。")
+        time.sleep(600)
