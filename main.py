@@ -8,12 +8,15 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from linebot import LineBotApi
 from linebot.models import TextSendMessage
 
-# --- 設定 ---
+# --- 設定（Renderの環境変数から読み込み） ---
 CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
-line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
-USER_ID = os.environ.get('LINE_USER_ID') # 自分のLINEユーザーID
+USER_ID = os.environ.get('LINE_USER_ID')
 
-# Renderのタイムアウト回避用
+# LINE通信の準備
+if CHANNEL_ACCESS_TOKEN:
+    line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
+
+# Renderのタイムアウト回避用の窓口
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -26,12 +29,13 @@ def run_health_check_server():
     server.serve_forever()
 
 def get_boat_data(jcd, rno):
-    """指定した会場・レースの展示タイムを取得"""
+    """展示タイムを取得"""
     url = f"https://www.boatrace.jp/owpc/pc/race/beforeinfo?rno={rno}&jcd={jcd}"
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         res = requests.get(url, headers=headers, timeout=10)
         res.encoding = 'utf-8'
+        # ここで BeautifulSoup を使います（requirements.txt に bs4 が必要）
         soup = BeautifulSoup(res.text, 'html.parser')
         ex_times = re.findall(r'6\.\d{2}|7\.\d{2}', res.text)[:6]
         return ex_times if len(ex_times) == 6 else None
@@ -39,24 +43,22 @@ def get_boat_data(jcd, rno):
         return None
 
 if __name__ == "__main__":
-    # 窓口開放
+    # 窓口を別スレッドで開始
     threading.Thread(target=run_health_check_server, daemon=True).start()
     
     print("🚀 ボートレース監視システム、フル稼働開始！")
     
     while True:
-        current_hour = time.localtime().tm_hour
-        # 8時〜21時の間だけ稼働
-        if 8 <= current_hour <= 21:
-            for jcd in [str(i).zfill(2) for i in range(1, 25)]:
-                # 各会場の1R〜12Rをチェック（簡易版として直近レースを想定）
-                # ※本来は締切時刻を見て制御しますが、まずはデータを取ることを優先
-                data = get_boat_data(jcd, "01") 
-                if data:
-                    msg = f"【データ取得】会場:{jcd} 1R\n展示タイム: {', '.join(data)}"
-                    line_bot_api.push_message(USER_ID, TextSendMessage(text=msg))
-                    print(f"📩 LINE送信済: {jcd}")
-                time.sleep(1) # サーバー負荷軽減
+        # 下関（19）の 1R をテストで取得してみる
+        data = get_boat_data("19", "01")
+        
+        if data and CHANNEL_ACCESS_TOKEN and USER_ID:
+            msg = f"【テスト成功】下関 1R\n展示: {', '.join(data)}"
+            try:
+                line_bot_api.push_message(USER_ID, TextSendMessage(text=msg))
+                print("📩 LINE送信成功！")
+            except Exception as e:
+                print(f"❌ LINE送信失敗: {e}")
         
         print("💤 15分待機します...")
         time.sleep(900)
