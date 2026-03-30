@@ -29,57 +29,60 @@ def run_server():
     server = HTTPServer(('0.0.0.0', port), MyHandler)
     server.serve_forever()
 
-# --- データ取得 ---
+# --- データ取得関数 ---
 def get_exhibition_data(jcd, rno):
-    """展示タイムと展示進入を取得"""
     url = f"https://www.boatrace.jp/owpc/pc/race/beforeinfo?rno={rno}&jcd={jcd}"
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         res = requests.get(url, headers=headers, timeout=10)
         res.encoding = 'utf-8'
-        # 展示タイム（6.xx または 7.xx）を6人分抽出
         ex_times = re.findall(r'6\.\d{2}|7\.\d{2}', res.text)[:6]
         return ex_times if len(ex_times) == 6 else None
     except:
         return None
 
 def get_active_venues():
-    """今日開催されている会場コードを取得"""
     url = "https://www.boatrace.jp/owpc/pc/race/index"
     try:
         res = requests.get(url, timeout=10)
-        # 会場コード(jcd) 01〜24 を抽出
         venues = re.findall(r'jcd=(\d{2})', res.text)
         return sorted(list(set(venues)))
     except:
         return []
 
 if __name__ == "__main__":
+    # 1. サーバーを別スレッドで起動
     threading.Thread(target=run_server, daemon=True).start()
-    print("🚀 全国24会場スキャン・フル稼働開始！")
     
+    print("🚀 システム起動プロセス開始...")
+    
+    # ★★★ 【最重要】起動した瞬間に藤井さんに挨拶を送る ★★★
+    if line_bot_api and USER_ID:
+        try:
+            test_msg = "藤井さん、お待たせしました！\ntakumi ai 起動しました。これで通信は完璧です！🚀"
+            line_bot_api.push_message(USER_ID, TextSendMessage(text=test_msg))
+            print("📩 【成功】テストメッセージを送信しました！")
+        except Exception as e:
+            print(f"❌ 【失敗】LINE送信エラー: {e}")
+    else:
+        print("⚠️ IDまたはトークンが設定されていません。")
+
+    # 2. 全国スキャンループ
     while True:
         current_hour = time.localtime().tm_hour
         if 8 <= current_hour <= 21:
             venues = get_active_venues()
-            print(f"📡 現在開催中の会場: {venues}")
-            
             for jcd in venues:
-                # 各会場の直近レース(1R〜12R)をスキャン
-                # ※効率化のため、まずは各会場の「今」のデータを1つずつチェック
+                # 1Rから12Rまでスキャン
                 for rno in range(1, 13):
-                    r_str = str(rno).zfill(1)
-                    data = get_exhibition_data(jcd, r_str)
-                    
+                    data = get_exhibition_data(jcd, str(rno))
                     if data:
-                        # 展示データがあればLINE送信
                         msg = f"【速報】会場:{jcd} {rno}R\n展示タイム: {', '.join(data)}"
                         try:
                             line_bot_api.push_message(USER_ID, TextSendMessage(text=msg))
-                            print(f"📩 送信済: 会場{jcd} {rno}R")
                         except:
                             pass
-                        time.sleep(1) # LINE連続送信制限対策
+                        time.sleep(1)
             
-        print("💤 全会場スキャン完了。10分待機します...")
-        time.sleep(600)
+        print("💤 スキャン完了。15分待機します...")
+        time.sleep(900)
